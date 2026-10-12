@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全国一般公共预算支出 · 结构变化 2017–2025</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1 id="title">全国一般公共预算支出</h1>
+  <p class="sub">全国一般公共预算支出决算 · 2017–2025 · 单位：亿元 · 数据来源：财政部预算司</p>
+</header>
+
+<section class="controls">
+  <nav id="crumbs" aria-label="层级"></nav>
+  <div class="row">
+    <label>类别
+      <select id="category"></select>
+    </label>
+    <label>显示前
+      <input id="topn" type="range" min="3" max="20" value="10">
+      <output id="topn-out">10</output> 项
+    </label>
+    <label>口径
+      <select id="metric">
+        <option value="actual">决算数</option>
+        <option value="budget">预算数</option>
+      </select>
+    </label>
+    <label class="check"><input id="share" type="checkbox"> 显示为占比</label>
+  </div>
+  <p class="hint">点击色块可以下钻到下一级（类 → 款 → 项）。“其他”是未单独列出部分的合计。</p>
+</section>
+
+<main>
+  <div id="chart" role="img"></div>
+  <div id="tooltip" hidden></div>
+</main>
+
+<section class="table-wrap">
+  <h2>明细</h2>
+  <div id="table"></div>
+</section>
+
+<footer>
+  <p>
+    数据：<a href="https://github.com/cdpath/china-public-budget/blob/main/data/budget.jsonl">budget.jsonl</a> ·
+    <a href="https://github.com/cdpath/china-public-budget/blob/main/data/budget.json">budget.json</a> ·
+    <a href="https://github.com/cdpath/china-public-budget">源代码</a>
+  </p>
+  <p class="note">
+    原表中“其中”只列出主要款、项，所以下级合计通常小于上级，差额计入“其他”。
+    2023 年起增发国债，2023 年表另有“调整预算数”列。部分科目在年份之间更名（如“医疗卫生与计划生育支出”→“卫生健康支出”），已按现名合并。
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
