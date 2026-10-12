@@ -10,7 +10,11 @@ const PALETTE = [
 const OTHER_COLOR = "#8e99a5";
 const SVGNS = "http://www.w3.org/2000/svg";
 
-const state = { path: ["社会保障和就业支出"], topN: 10, metric: "actual", share: false };
+// The default view reproduces the reference chart: 养老保险基金补助 split into its 项.
+const state = {
+  path: ["社会保障和就业支出"], expanded: ["财政对基本养老保险基金的补助"],
+  topN: 10, metric: "actual", share: false, fold: true,
+};
 let YEARS = [];
 const INDEX = new Map(); // year -> Map(keyPath string -> aggregated node)
 
@@ -72,27 +76,71 @@ function val(node, metric) {
   return node[metric] || 0;
 }
 
-function seriesFor(path, metric, topN) {
+function childKeysAcrossYears(path) {
   const keys = [];
   for (const y of YEARS) {
     const p = lookup(y, path);
     if (p) for (const k of p.childKeys) if (!keys.includes(k)) keys.push(k);
   }
-  const all = keys.map((key) => {
-    const values = YEARS.map((y) => val(lookup(y, path.concat(key)), metric));
-    return { key, values, sum: values.reduce((a, b) => a + b, 0), drill: hasChildren(path.concat(key)) };
+  return keys;
+}
+
+function shortLabel(key) {
+  const m = key.match(/^财政对(.+)的补助$/);
+  return m ? `${m[1]}补助` : key;
+}
+
+// Catch-all items such as "其他社会保障和就业支出" carry no meaning of their own.
+function isCatchAll(key) {
+  return key.startsWith("其他");
+}
+
+/**
+ * Series are the children of `path`. A child listed in `expanded` is replaced by its own
+ * children, so one chart can mix 款 and 项 (e.g. 养老保险基金补助 split into 企业职工 / 城乡居民).
+ * Each series has `sub`, its key path relative to `path`.
+ */
+function seriesFor(path, metric, topN, expanded = [], fold = false) {
+  const subs = [];
+  for (const k of childKeysAcrossYears(path)) {
+    const grand = expanded.includes(k) ? childKeysAcrossYears(path.concat(k)) : [];
+    if (grand.length) for (const g of grand) subs.push([k, g]);
+    else subs.push([k]);
+  }
+  const all = subs.map((sub) => {
+    const key = sub[sub.length - 1];
+    const values = YEARS.map((y) => val(lookup(y, path.concat(sub)), metric));
+    const drill = hasChildren(path.concat(sub));
+    return {
+      id: sub.join("/"), key, sub, label: shortLabel(key), values,
+      sum: values.reduce((a, b) => a + b, 0), drill,
+      expandable: drill && sub.length === 1,
+      expandedFrom: sub.length > 1 ? sub[0] : null,
+    };
   }).filter((s) => s.sum > 0);
   all.sort((a, b) => b.sum - a.sum);
 
-  const shown = all.slice(0, topN);
+  const shown = all.filter((s) => !(fold && isCatchAll(s.key))).slice(0, topN);
   const parents = YEARS.map((y) => val(lookup(y, path), metric));
   const other = YEARS.map((y, i) => Math.max(0, parents[i] - shown.reduce((a, s) => a + s.values[i], 0)));
   // Drop the remainder when it is only rounding noise.
   if (other.some((v) => v >= 0.5)) {
-    shown.push({ key: OTHER, values: other, sum: other.reduce((a, b) => a + b, 0), drill: false, isOther: true });
+    shown.push({ id: OTHER, key: OTHER, sub: [], label: OTHER, values: other, sum: other.reduce((a, b) => a + b, 0), drill: false, isOther: true });
   }
   shown.forEach((s, i) => (s.color = s.isOther ? OTHER_COLOR : PALETTE[i % PALETTE.length]));
   return { series: shown, parents, all };
+}
+
+function drillTo(s) {
+  state.path = state.path.concat(s.sub);
+  state.expanded = [];
+  sync();
+}
+
+function toggleExpand(s) {
+  const k = s.expandedFrom || s.key;
+  state.expanded = state.expanded.includes(k) ? state.expanded.filter((e) => e !== k) : state.expanded.concat(k);
+  sync();
 }
 
 function fmt(v) {
@@ -122,7 +170,7 @@ function labelColor(hex) {
 
 function render() {
   const { path, metric, topN, share } = state;
-  const { series, parents } = seriesFor(path, metric, topN);
+  const { series, parents } = seriesFor(path, metric, topN, state.expanded, state.fold);
   const title = path.length ? path[path.length - 1] : TOTAL;
   $("title").textContent = path.length ? `${title}主要类别金额` : `${TOTAL}主要类别金额`;
   document.title = `${$("title").textContent} · 2017–2025`;
@@ -179,7 +227,7 @@ function render() {
     g.addEventListener("mouseleave", hideTip);
     g.addEventListener("mouseenter", () => highlight(svg, i));
     g.addEventListener("mouseleave", () => highlight(svg, null));
-    if (s.drill) g.addEventListener("click", () => { state.path = path.concat(s.key); sync(); });
+    if (s.drill) g.addEventListener("click", () => drillTo(s));
   });
 
   // Totals above bars and year labels.
@@ -197,17 +245,14 @@ function render() {
 
   // Start the legend below the "当年支出总额" label.
   const legendTop = y(share ? 100 : parents[n - 1]) + 12;
-  drawLegend(gText, series, stacks, y, x0(n - 1) + bw, legendTop, H - m.bottom, (i) => {
-    const s = series[i];
-    if (s.drill) { state.path = path.concat(s.key); sync(); }
-  }, (i) => highlight(svg, i));
+  drawLegend(gText, series, stacks, y, x0(n - 1) + bw, legendTop, H - m.bottom, (i) => highlight(svg, i));
 
   const chart = $("chart");
   chart.replaceChildren(svg);
   renderTable(series, parents, path);
 }
 
-function drawLegend(g, series, stacks, y, xEdge, yMin, yMax, onClick, onHover) {
+function drawLegend(g, series, stacks, y, xEdge, yMin, yMax, onHover) {
   const n = YEARS.length;
   const lineH = 19;
   const items = series.map((s, i) => {
@@ -223,23 +268,33 @@ function drawLegend(g, series, stacks, y, xEdge, yMin, yMax, onClick, onHover) {
     it.y = Math.min(it.y, next - lineH);
     next = it.y;
   }
-  const lx = xEdge + 22;
+  const tx = xEdge + 14; // expand/collapse toggle column
+  const lx = tx + 18;
   for (const it of items) {
-    const name = it.s.key.length > 16 ? it.s.key.slice(0, 15) + "…" : it.s.key;
-    const grp = el("g", { class: "legend", style: it.s.drill ? "cursor:pointer" : "" }, g);
-    el("path", { d: `M${xEdge + 2},${it.want} L${lx - 4},${it.y}`, stroke: it.s.color, "stroke-width": 1, fill: "none", opacity: 0.6 }, grp);
-    const bg = el("rect", { x: lx - 3, y: it.y - 9, height: 18, rx: 2, fill: it.s.color }, grp);
-    const t = el("text", { x: lx, y: it.y + 4.5, "font-size": 13.5, "font-weight": 700, fill: labelColor(it.s.color) }, grp);
+    const s = it.s;
+    const name = s.label.length > 15 ? s.label.slice(0, 14) + "…" : s.label;
+    const grp = el("g", { class: "legend", style: s.drill ? "cursor:pointer" : "" }, g);
+    el("path", { d: `M${xEdge + 2},${it.want} L${tx - 2},${it.y}`, stroke: s.color, "stroke-width": 1, fill: "none", opacity: 0.6 }, grp);
+    const bg = el("rect", { x: lx - 3, y: it.y - 9, height: 18, rx: 2, fill: s.color }, grp);
+    const t = el("text", { x: lx, y: it.y + 4.5, "font-size": 13.5, "font-weight": 700, fill: labelColor(s.color) }, grp);
     t.textContent = name;
-    const tt = el("title", {}, grp);
-    tt.textContent = it.s.key + (it.s.drill ? "（点击下钻）" : "");
+    el("title", {}, grp).textContent = s.key + (s.drill ? "（点击下钻）" : "");
     // Measure after insertion so the background fits the text.
     requestAnimationFrame(() => {
       try { bg.setAttribute("width", t.getComputedTextLength() + 6); } catch (_) { bg.setAttribute("width", name.length * 14 + 6); }
     });
-    grp.addEventListener("click", () => onClick(it.i));
+    if (s.drill) grp.addEventListener("click", () => drillTo(s));
     grp.addEventListener("mouseenter", () => onHover(it.i));
     grp.addEventListener("mouseleave", () => onHover(null));
+
+    if (s.expandable || s.expandedFrom) {
+      const tg = el("g", { class: "toggle", style: "cursor:pointer" }, g);
+      el("circle", { cx: tx + 7, cy: it.y, r: 7, fill: "#fff", stroke: s.color, "stroke-width": 1.5 }, tg);
+      const sym = el("text", { x: tx + 7, y: it.y + 4.5, "text-anchor": "middle", "font-size": 13, "font-weight": 700, fill: s.color }, tg);
+      sym.textContent = s.expandable ? "+" : "−";
+      el("title", {}, tg).textContent = s.expandable ? `在本图中展开“${s.key}”的下级` : `收起为“${s.expandedFrom}”`;
+      tg.addEventListener("click", () => toggleExpand(s));
+    }
   }
 }
 
@@ -254,7 +309,7 @@ function showTip(ev, s, j, parents) {
   const tip = $("tooltip");
   const v = s.values[j];
   const prev = j > 0 ? s.values[j - 1] : null;
-  const node = s.isOther ? null : lookup(YEARS[j], state.path.concat(s.key));
+  const node = s.isOther ? null : lookup(YEARS[j], state.path.concat(s.sub));
   const lines = [
     `<b>${s.key}</b> · ${YEARS[j]}年`,
     `<span class="k">${state.metric === "actual" ? "决算数" : "预算数"}</span> ${fmt(v)} 亿元`,
@@ -267,6 +322,7 @@ function showTip(ev, s, j, parents) {
   if (node && node.names.length && (node.names.length > 1 || node.names[0] !== s.key)) {
     lines.push(`<span class="k">原表名称</span> ${node.names.join("、")}`);
   }
+  if (s.expandedFrom) lines.push(`<span class="k">属于</span> ${s.expandedFrom}`);
   if (s.drill) lines.push(`<span class="k">点击查看下级</span>`);
   tip.innerHTML = lines.join("<br>");
   tip.hidden = false;
@@ -280,15 +336,16 @@ function showTip(ev, s, j, parents) {
 function hideTip() { $("tooltip").hidden = true; }
 
 function renderTable(series, parents, path) {
-  const { all } = seriesFor(path, state.metric, Infinity);
-  const colorOf = new Map(series.map((s) => [s.key, s.color]));
+  const { all } = seriesFor(path, state.metric, Infinity, state.expanded, false);
+  const colorOf = new Map(series.map((s) => [s.id, s.color]));
   const rows = all.slice();
   const listed = YEARS.map((_, j) => all.reduce((a, s) => a + s.values[j], 0));
   const unlisted = parents.map((p, j) => Math.max(0, p - listed[j]));
   const head = `<tr><th>${path.length ? path[path.length - 1] : TOTAL}</th>${YEARS.map((y) => `<th>${y}</th>`).join("")}</tr>`;
   const body = rows.map((s) => {
-    const c = colorOf.get(s.key) || OTHER_COLOR;
-    return `<tr><td><span class="sw" style="background:${c}"></span>${s.key}</td>${s.values.map((v) => `<td>${v ? v.toFixed(2) : "–"}</td>`).join("")}</tr>`;
+    const c = colorOf.get(s.id) || OTHER_COLOR;
+    const name = s.expandedFrom ? `${s.expandedFrom} › ${s.key}` : s.key;
+    return `<tr><td><span class="sw" style="background:${c}"></span>${name}</td>${s.values.map((v) => `<td>${v ? v.toFixed(2) : "–"}</td>`).join("")}</tr>`;
   });
   if (unlisted.some((v) => v >= 0.5)) {
     body.push(`<tr><td><span class="sw" style="background:${OTHER_COLOR}"></span>未单独列出</td>${unlisted.map((v) => `<td>${v.toFixed(2)}</td>`).join("")}</tr>`);
@@ -306,12 +363,14 @@ function renderControls() {
     : `<a data-depth="${i}">${p}</a>`).join('<span class="sep">›</span>');
   crumbs.querySelectorAll("a").forEach((a) => a.addEventListener("click", () => {
     state.path = path.slice(0, +a.dataset.depth);
+    state.expanded = [];
     sync();
   }));
   $("category").value = path[0] || "";
   $("topn").value = state.topN;
   $("topn-out").textContent = state.topN;
   $("share").checked = state.share;
+  $("fold").checked = state.fold;
   // 项 rows carry no 预算数 in the source tables, so the budget view stops at 款.
   const budgetOk = path.length < 2;
   const opt = $("metric").querySelector('option[value="budget"]');
@@ -334,13 +393,18 @@ function readHash() {
   if (h.has("n")) state.topN = Math.min(20, Math.max(3, +h.get("n") || 10));
   if (h.has("m")) state.metric = h.get("m") === "budget" ? "budget" : "actual";
   if (h.has("s")) state.share = h.get("s") === "1";
+  if (h.has("f")) state.fold = h.get("f") !== "0";
+  if (h.has("e")) state.expanded = h.get("e") ? h.get("e").split("|") : [];
   // Drop path segments that don't exist in the data.
   while (state.path.length && !YEARS.some((y) => lookup(y, state.path))) state.path.pop();
 }
 
 function sync() {
   renderControls();
-  const h = new URLSearchParams({ p: state.path.join("/"), n: state.topN, m: state.metric, s: state.share ? 1 : 0 });
+  const h = new URLSearchParams({
+    p: state.path.join("/"), e: state.expanded.join("|"), n: state.topN, m: state.metric,
+    s: state.share ? 1 : 0, f: state.fold ? 1 : 0,
+  });
   history.replaceState(null, "", `#${h}`);
   hideTip();
   render();
@@ -351,7 +415,12 @@ async function main() {
   buildIndex(data);
   fillCategorySelect();
   readHash();
-  $("category").addEventListener("change", (e) => { state.path = e.target.value ? [e.target.value] : []; sync(); });
+  $("category").addEventListener("change", (e) => {
+    state.path = e.target.value ? [e.target.value] : [];
+    state.expanded = [];
+    sync();
+  });
+  $("fold").addEventListener("change", (e) => { state.fold = e.target.checked; sync(); });
   $("topn").addEventListener("input", (e) => { state.topN = +e.target.value; sync(); });
   $("metric").addEventListener("change", (e) => { state.metric = e.target.value; sync(); });
   $("share").addEventListener("change", (e) => { state.share = e.target.checked; sync(); });
