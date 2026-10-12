@@ -29,16 +29,11 @@ header h1 {
 
 .controls { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 0; }
 .controls .row { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; font-size: 14px; }
+.controls .row + .row { margin-top: 10px; }
 .controls label { display: inline-flex; align-items: center; gap: 6px; }
 .controls select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; max-width: 260px; }
 .controls output { display: inline-block; min-width: 1.5em; text-align: right; font-variant-numeric: tabular-nums; }
 .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
-
-#crumbs { font-size: 14px; margin-bottom: 10px; }
-#crumbs a { color: var(--accent); text-decoration: none; cursor: pointer; }
-#crumbs a:hover { text-decoration: underline; }
-#crumbs .sep { color: var(--muted); margin: 0 6px; }
-#crumbs .cur { font-weight: 600; }
 
 main { position: relative; }
 #chart { overflow-x: auto; }
@@ -72,6 +67,9 @@ main { position: relative; }
 #table th:first-child, #table td:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
 #table thead th { font-weight: 600; color: var(--muted); }
 #table tr.total td { font-weight: 700; }
+#table tr.group td { font-weight: 600; background: #fafafa; }
+#table tr.group td:first-child { background: #fafafa; }
+#table tr.child td:first-child { padding-left: 26px; }
 #table .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 
 footer { margin-top: 28px; color: var(--muted); font-size: 12px; line-height: 1.7; }

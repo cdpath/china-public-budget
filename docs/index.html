@@ -13,11 +13,26 @@
 </header>
 
 <section class="controls">
-  <nav id="crumbs" aria-label="层级"></nav>
   <div class="row">
     <label>类别
       <select id="category"></select>
     </label>
+    <label>排序依据
+      <select id="order">
+        <option value="sum">各年合计</option>
+        <option value="last">最新一年</option>
+        <option value="growth">增长倍数（首年→末年）</option>
+        <option value="source">原表顺序</option>
+      </select>
+    </label>
+    <label>排列
+      <select id="dir">
+        <option value="bottom">靠前的放底部</option>
+        <option value="top">靠前的放顶部</option>
+      </select>
+    </label>
+  </div>
+  <div class="row">
     <label>显示前
       <input id="topn" type="range" min="3" max="20" value="10">
       <output id="topn-out">10</output> 项
@@ -31,7 +46,7 @@
     <label class="check"><input id="share" type="checkbox"> 显示为占比</label>
     <label class="check"><input id="fold" type="checkbox" checked> “其他××支出”并入“其他”</label>
   </div>
-  <p class="hint">点击色块可以下钻到下一级（类 → 款 → 项）。点击图例前的 + 可以在本图中把该科目展开为下级，− 收起。“其他”是未单独显示部分的合计。</p>
+  <p class="hint">点击色块展开下一级，再点一次收起。展开后的各项沿用原来的位置和同一色系，并用边框框在一起。“其他”是未单独显示部分的合计，始终排在最小的一端。</p>
 </section>
 
 <main>
